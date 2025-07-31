@@ -40,8 +40,11 @@ public class UnitSpawner : MonoBehaviour
 
                 // 4. Инициализируем персонажа с сгенерированными данными.
                 character.Initialize(blueprint);
-                character.teamID = teamID; // Присвоение ID автоматически вызовет перекраску.
+                character.teamID = teamID;
                 character.Mover.PlaceOnGrid(spawnTile.x, spawnTile.y);
+                
+                // 5. Создаем и привязываем элементы UI для нового персонажа.
+                FeedbackManager.Instance.CreateHealthBarFor(character);
             }
         }
     }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 
 /// <summary>
 /// Управляет всеми боевыми характеристиками и параметрами персонажа.
@@ -24,9 +25,15 @@ public class CharacterStats : MonoBehaviour
     public int fatigueRegenPerTurn { get; private set; }
     public int attackFatigueCost { get; private set; }
     public int restFatigueRecovery { get; private set; }
+
+    /// <summary>
+    /// Событие, которое вызывается при изменении здоровья.
+    /// Передает (текущее здоровье, максимальное здоровье).
+    /// </summary>
+    public event Action<float, float> OnHealthChanged;
     
     /// <summary>
-    /// Инициализирует статы персонажа на основе его blueprint.
+    /// Инициализирует статы персонажа на основе его blueprint и оповещает UI.
     /// </summary>
     public void Initialize(CharacterBlueprint bp)
     {
@@ -36,14 +43,17 @@ public class CharacterStats : MonoBehaviour
         CalculateDerivedStats();
         currentFatigue = 0;
         currentHealth = maxHealth;
+
+        OnHealthChanged?.Invoke(currentHealth, maxHealth);
     }
     
     /// <summary>
-    /// Обрабатывает получение урона.
+    /// Применяет урон к текущему здоровью и вызывает событие OnHealthChanged.
     /// </summary>
     public void TakeDamage(float amount)
     {
         currentHealth -= amount;
+        OnHealthChanged?.Invoke(currentHealth, maxHealth);
     }
 
     /// <summary>
@@ -51,7 +61,7 @@ public class CharacterStats : MonoBehaviour
     /// </summary>
     private void CalculateDerivedStats()
     {
-        if (blueprint == null) 
+        if (blueprint == null)
         {
             Debug.LogError("CharacterBlueprint is not assigned to CharacterStats on " + gameObject.name);
             return;
@@ -63,13 +73,13 @@ public class CharacterStats : MonoBehaviour
         damage = blueprint.Strength * 5;
         hitChance = 50 + blueprint.Accuracy * 5;
         dodgeChance = 5 + blueprint.Reflexes * 5;
-        
+
         // --- Усталость ---
         // Пассивная регенерация за ход зависит от Воли и Выносливости.
         fatigueRegenPerTurn = blueprint.Willpower + blueprint.Endurance;
         // Активное восстановление при отдыхе зависит от Выносливости и опыта (Интеллекта).
         restFatigueRecovery = blueprint.Endurance * 2 + blueprint.Intellect;
-        
+
         ApplyClassBonuses();
     }
 

@@ -84,22 +84,24 @@ public class CharacterActions : MonoBehaviour
         // Debug.Log($"{self.name} is resting. Fatigue is now {stats.currentFatigue}/{stats.maxFatigue}");
     }
 
-    /// <summary>
-    /// Выполняет действие "Атака" по указанной цели.
-    /// </summary>
+
     private void Attack(Character target)
     {
         stats.currentFatigue += stats.attackFatigueCost;
         stats.currentFatigue = Mathf.Min(stats.currentFatigue, stats.maxFatigue);
-        // Debug.Log($"{self.name} attacks {target.name}. Fatigue is now {stats.currentFatigue}/{stats.maxFatigue}");
 
         float chanceToHit = stats.hitChance - target.Stats.dodgeChance;
         if (Random.Range(0, 100) <= chanceToHit)
         {
-            target.Actions.TakeDamage(stats.damage, self);
+            float damageDealt = stats.damage;
+            target.Actions.TakeDamage(damageDealt, self);
+            FeedbackManager.Instance.ShowFeedbackText(target.transform, damageDealt.ToString("F0"), Color.red);
+        }
+        else
+        {
+            FeedbackManager.Instance.ShowFeedbackText(target.transform, "Miss", Color.white);
         }
 
-        // Атака считается действием и запускает кулдаун.
         lastAttackTime = Time.time;
     }
 

@@ -110,11 +110,13 @@ public class BattleManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Завершает бой и объявляет победителя.
+    /// Завершает бой и объявляет победителя; сбрасывает пул объектов фидбека до изначального количества
     /// </summary>
     /// <param name="winningTeamID">ID победившей команды (или 0 для ничьей).</param>
     private void EndBattle(int winningTeamID)
     {
+        if (battleEnded) return;
+
         battleEnded = true;
         currentPhase = GamePhase.End;
         if (winningTeamID > 0)
@@ -124,6 +126,13 @@ public class BattleManager : MonoBehaviour
         else
         {
             Debug.Log("Battle has ended in a draw!");
+        }
+        
+        // Сбрасываем пул объектов, чтобы освободить память, занятую
+        // runtime-объектами, созданными во время пиковых нагрузок.
+        if(FeedbackManager.Instance != null)
+        {
+            FeedbackManager.Instance.ResetPool();
         }
     }
 }
