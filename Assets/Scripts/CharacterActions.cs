@@ -1,100 +1,107 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
-/// Управляет боевой логикой и принятием решений персонажа.
-/// Отвечает за поиск целей, выбор действия (атака, движение, отдых) и их выполнение.
+/// Управляет боевым поведением персонажа: поиском цели, выбором и выполнением действий.
 /// </summary>
 public class CharacterActions : MonoBehaviour
 {
-    // Ссылки на другие компоненты этого же персонажа
-    private Character self;
-    private CharacterStats stats;
-    private CharacterMover mover;
+    private BattleManager _battleManager;
+    private Character _self;
+    private CharacterStats _stats;
+    private CharacterMover _mover;
 
     [Header("AI State")]
-    private Character currentTarget;
+    private Character _currentTarget;
     
-    // HACK: Временно кулдаун является фиксированным. 
-    // В будущем он должен зависеть от оружия или скорости персонажа.
+    // TODO: Кулдаун атаки должен зависеть от оружия/скорости персонажа.
     private const float ATTACK_COOLDOWN = 2.0f;
-    private float lastAttackTime;
+    private float _lastAttackTime;
 
     private void Awake()
     {
-        self = GetComponent<Character>();
-        stats = GetComponent<CharacterStats>();
-        mover = GetComponent<CharacterMover>();
+        _self = GetComponent<Character>();
+        _stats = GetComponent<CharacterStats>();
+        _mover = GetComponent<CharacterMover>();
+        _battleManager = BattleManager.Instance;
     }
 
     /// <summary>
-    /// Выполняет один "тик" логики персонажа. Вызывается каждый кадр из Character.Update().
+    /// Выполняет один такт логики персонажа. Вызывается из Character.Update().
     /// </summary>
     public void Tick()
     {
-        if (mover.isMoving) return;
+        if (_mover.isMoving) return;
 
-        // 1. Поиск цели, если ее нет.
-        if (currentTarget == null || currentTarget.Stats.currentHealth <= 0)
+        if (_currentTarget == null || _currentTarget.Stats.currentHealth <= 0)
         {
             FindClosestEnemy();
-            if (currentTarget == null) return; // Врагов не осталось.
+            if (_currentTarget == null) return; // Бой окончен, врагов не осталось.
         }
 
-        // 2. Определение дистанции до цели.
-        int distance = GetDistanceToTarget(currentTarget);
+        int distance = GetDistanceToTarget(_currentTarget);
 
-        // 3. Выбор действия: двигаться или атаковать/отдыхать.
-        if (distance > stats.attackRange)
+        if (distance > _stats.attackRange)
         {
-            mover.FindPathAndMove(currentTarget);
+            _mover.FindPathAndMove(_currentTarget);
         }
         else
         {
-            // Персонаж готов действовать, если его кулдаун прошел.
-            if (Time.time > lastAttackTime + ATTACK_COOLDOWN)
-            {
-                // Это "ход" персонажа. Сначала он пассивно восстанавливает немного сил.
-                stats.currentFatigue -= stats.fatigueRegenPerTurn;
-                stats.currentFatigue = Mathf.Max(0, stats.currentFatigue);
-
-                // Проверяем, хватает ли сил на атаку.
-                if (stats.currentFatigue + stats.attackFatigueCost <= stats.maxFatigue)
-                {
-                    Attack(currentTarget);
-                }
-                else
-                {
-                    // Если сил не хватает, персонаж вынужден пропустить атаку и отдохнуть.
-                    Rest();
-                }
-            }
+            Act();
         }  
     }
 
     /// <summary>
-    /// Выполняет действие "Отдых", активно восстанавливая усталость.
+    /// Обрабатывает получение урона этим персонажем.
     /// </summary>
-    private void Rest()
+    public void TakeDamage(float amount, Character attacker)
     {
-        stats.currentFatigue -= stats.restFatigueRecovery;
-        stats.currentFatigue = Mathf.Max(0, stats.currentFatigue);
-        
-        // Отдых считается действием и запускает кулдаун.
-        lastAttackTime = Time.time;
-        // Debug.Log($"{self.name} is resting. Fatigue is now {stats.currentFatigue}/{stats.maxFatigue}");
+        _stats.TakeDamage(amount);
+        if (_stats.currentHealth <= 0)
+        {
+            Die();
+        }
     }
 
+    // Определяет, какое действие предпринять, когда персонаж находится в радиусе атаки.
+    private void Act()
+    {
+        if (Time.time > _lastAttackTime + ATTACK_COOLDOWN)
+        {
+            // Пассивное восстановление усталости в начале хода.
+            _stats.currentFatigue -= _stats.fatigueRegenPerTurn;
+            _stats.currentFatigue = Mathf.Max(0, _stats.currentFatigue);
 
+            if (_stats.currentFatigue + _stats.attackFatigueCost <= _stats.maxFatigue)
+            {
+                Attack(_currentTarget);
+            }
+            else
+            {
+                Rest();
+            }
+        }
+    }
+
+    // Выполняет действие "Отдых", активно восстанавливая усталость.
+    private void Rest()
+    {
+        _stats.currentFatigue -= _stats.restFatigueRecovery;
+        _stats.currentFatigue = Mathf.Max(0, _stats.currentFatigue);
+        _lastAttackTime = Time.time;
+    }
+
+    // Выполняет атаку по указанной цели.
     private void Attack(Character target)
     {
-        stats.currentFatigue += stats.attackFatigueCost;
-        stats.currentFatigue = Mathf.Min(stats.currentFatigue, stats.maxFatigue);
+        _stats.currentFatigue += _stats.attackFatigueCost;
+        _stats.currentFatigue = Mathf.Min(_stats.currentFatigue, _stats.maxFatigue);
 
-        float chanceToHit = stats.hitChance - target.Stats.dodgeChance;
+        float chanceToHit = _stats.hitChance - target.Stats.dodgeChance;
         if (Random.Range(0, 100) <= chanceToHit)
         {
-            float damageDealt = stats.damage;
-            target.Actions.TakeDamage(damageDealt, self);
+            float damageDealt = _stats.damage;
+            target.Actions.TakeDamage(damageDealt, _self);
             FeedbackManager.Instance.ShowFeedbackText(target.transform, damageDealt.ToString("F0"), Color.red);
         }
         else
@@ -102,53 +109,40 @@ public class CharacterActions : MonoBehaviour
             FeedbackManager.Instance.ShowFeedbackText(target.transform, "Miss", Color.white);
         }
 
-        lastAttackTime = Time.time;
+        _lastAttackTime = Time.time;
     }
 
-    /// <summary>
-    /// Обрабатывает получение урона этим персонажем.
-    /// </summary>
-    /// <param name="amount">Количество полученного урона.</param>
-    /// <param name="attacker">Персонаж, нанесший урон.</param>
-    public void TakeDamage(float amount, Character attacker)
-    {
-        stats.TakeDamage(amount);
-        if (stats.currentHealth <= 0)
-        {
-            Die();
-        }
-    }
-
-    /// <summary>
-    /// Логика поражения персонажа в бою.
-    /// </summary>
+    // Обрабатывает смерть персонажа.
     private void Die()
     {
-        if (mover != null)
+        _battleManager.UnregisterFighter(_self);
+
+        if (_mover != null)
         {
-            var tile = GridManager.Instance.GetTile(mover.currentX, mover.currentY);
-            if(tile != null) tile.ClearOccupant();
+            var tile = GridManager.Instance.GetTile(_mover.currentX, _mover.currentY);
+            if (tile != null) tile.ClearOccupant();
         }
         Destroy(gameObject);
     }
 
-    /// <summary>
-    /// Находит ближайшего живого противника на поле.
-    /// </summary>
+    // Находит ближайшего живого противника среди зарегистрированных участников боя.
     private void FindClosestEnemy()
     {
-        // TODO: Оптимизировать поиск. FindObjectsOfType - ресурсоемкая операция.
-        // В будущем можно кэшировать списки команд в BattleManager.
-        Character[] allCharacters = FindObjectsOfType<Character>();
+        List<Character> enemies = _battleManager.GetOpposingFighters(_self.teamID);
+        if (enemies == null || enemies.Count == 0)
+        {
+            _currentTarget = null;
+            return;
+        }
+
         Character closestEnemy = null;
         float minDistanceSqr = float.MaxValue;
 
-        foreach (var other in allCharacters)
+        foreach (var other in enemies)
         {
-            if (other.teamID == self.teamID || other.Stats.currentHealth <= 0) continue;
+            // Пропускаем уже мертвых врагов (на случай, если они еще не удалены из списка).
+            if (other == null || other.Stats.currentHealth <= 0) continue;
 
-            // Используем sqrMagnitude вместо Distance для оптимизации, т.к. нам не нужно точное расстояние,
-            // а только сравнение. Это избавляет от операции извлечения корня.
             float distanceSqr = (transform.position - other.transform.position).sqrMagnitude;
             if (distanceSqr < minDistanceSqr)
             {
@@ -156,12 +150,10 @@ public class CharacterActions : MonoBehaviour
                 closestEnemy = other;
             }
         }
-        currentTarget = closestEnemy;
+        _currentTarget = closestEnemy;
     }
 
-    /// <summary>
-    /// Рассчитывает расстояние до цели в клетках (Расстояние Чебышёва).
-    /// </summary>
+    // Рассчитывает расстояние до цели в клетках (Расстояние Чебышёва).
     private int GetDistanceToTarget(Character target) => 
-        Mathf.Max(Mathf.Abs(mover.currentX - target.Mover.currentX), Mathf.Abs(mover.currentY - target.Mover.currentY));
+        Mathf.Max(Mathf.Abs(_mover.currentX - target.Mover.currentX), Mathf.Abs(_mover.currentY - target.Mover.currentY));
 }

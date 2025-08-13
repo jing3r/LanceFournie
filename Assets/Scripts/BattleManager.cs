@@ -1,124 +1,146 @@
 using UnityEngine;
+using System.Collections.Generic;
+using System;
+
+public enum GamePhase { Draft, Placement, Battle, End }
 
 /// <summary>
-/// Перечисление, определяющее текущую фазу боя.
-/// </summary>
-public enum GamePhase { Placement, Battle, End }
-
-/// <summary>
-/// Центральный менеджер, управляющий состоянием и ходом всего сражения.
-/// Реализован как синглтон для глобального доступа к текущей фазе боя.
+/// Центральный менеджер, управляющий состоянием и ходом сражения.
 /// </summary>
 public class BattleManager : MonoBehaviour
 {
-    // Синглтон для легкого доступа из любой точки кода.
     public static BattleManager Instance;
+    public static event Action OnBattleStarted;
+    public static event Action OnPlacementPhaseStarted;
+    public GamePhase currentPhase { get; private set; }
+    private bool _player1LineupConfirmed = false;
+    private bool _player2LineupConfirmed = false;
+    private bool _player1Ready = false;
+    private bool _player2Ready = false;
+    private bool _battleEnded = false;
 
-    [Tooltip("Текущая фаза боя.")]
-    public GamePhase currentPhase;
-
-    private bool player1Ready = false;
-    private bool player2Ready = false;
-    private bool battleEnded = false;
-
+    private List<Character> _team1Fighters = new List<Character>();
+    private List<Character> _team2Fighters = new List<Character>();
+    public bool IsLineupConfirmed(int playerID)
+    {
+        if (playerID == 1) return _player1LineupConfirmed;
+        if (playerID == 2) return _player2LineupConfirmed;
+        return false;
+    }
+    
     private void Awake()
     {
-        // Стандартная реализация синглтона.
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
     }
 
     private void Start()
     {
-        // Бой всегда начинается с фазы расстановки.
-        currentPhase = GamePhase.Placement;
+            currentPhase = GamePhase.Draft;
     }
 
     private void Update()
     {
-        // Проверка условия победы выполняется каждый кадр только в фазе боя.
-        if (currentPhase == GamePhase.Battle && !battleEnded)
+        if (currentPhase == GamePhase.Battle && !_battleEnded)
         {
             CheckForVictory();
         }
     }
-    
     /// <summary>
-    /// Регистрирует готовность игрока к началу боя.
+    /// Игрок подтверждает свой состав на "скамейке".
     /// </summary>
-    /// <param name="playerID">ID игрока (1 или 2), который нажал кнопку готовности.</param>
+    public void ConfirmLineup(int playerID)
+    {
+        if (currentPhase != GamePhase.Draft) return;
+
+        if (playerID == 1) _player1LineupConfirmed = true;
+        if (playerID == 2) _player2LineupConfirmed = true;
+
+        if (_player1LineupConfirmed && _player2LineupConfirmed)
+        {
+            currentPhase = GamePhase.Placement;
+            OnPlacementPhaseStarted?.Invoke();
+            Debug.Log("Placement phase has started. Rosters are now locked.");
+        }
+    }
+
+    /// <summary>
+    /// Обрабатывает сигнал готовности от одного из игроков.
+    /// </summary>
     public void PlayerReady(int playerID)
     {
         if (currentPhase != GamePhase.Placement) return;
 
-        if (playerID == 1) player1Ready = true;
-        if (playerID == 2) player2Ready = true;
-
-        // Бой начинается, когда оба игрока подтвердили свою готовность.
-        if (player1Ready && player2Ready)
+        if (playerID == 1) _player1Ready = true;
+        if (playerID == 2) _player2Ready = true;
+        
+        if (_player1Ready && _player2Ready)
         {
             StartBattle();
         }
     }
 
     /// <summary>
-    /// Начинает фазу боя.
+    /// Регистрирует персонажа как участника боя.
     /// </summary>
+    public void RegisterFighter(Character fighter)
+    {
+        var list = (fighter.teamID == 1) ? _team1Fighters : _team2Fighters;
+        if (!list.Contains(fighter))
+        {
+            list.Add(fighter);
+        }
+    }
+
+    /// <summary>
+    /// Удаляет персонажа из списка участников боя.
+    /// </summary>
+    public void UnregisterFighter(Character fighter)
+    {
+        if (fighter.teamID == 1) _team1Fighters.Remove(fighter);
+        else _team2Fighters.Remove(fighter);
+    }
+
+    /// <summary>
+    /// Возвращает список бойцов команды-противника.
+    /// </summary>
+    public List<Character> GetOpposingFighters(int myTeamID)
+    {
+        return (myTeamID == 1) ? _team2Fighters : _team1Fighters;
+    }
+    
     private void StartBattle()
     {
+        if (currentPhase == GamePhase.Battle) return;
+
         currentPhase = GamePhase.Battle;
-        battleEnded = false;
-        Debug.Log("Battle has started!");
+        _battleEnded = false;
+        Debug.Log($"Battle has started! Team 1: {_team1Fighters.Count} fighters. Team 2: {_team2Fighters.Count} fighters.");
+
+        OnBattleStarted?.Invoke();
     }
 
-    /// <summary>
-    /// Проверяет, остались ли на поле бойцы у обеих команд.
-    /// </summary>
+    // Проверяет, не осталась ли на поле только одна команда.
     private void CheckForVictory()
     {
-        // TODO: Оптимизировать. Постоянный вызов FindObjectsOfType может быть медленным в больших боях.
-        // Лучше иметь кэшированные списки команд, которые обновляются при смерти юнита.
-        Character[] allCharacters = FindObjectsOfType<Character>();
-        int team1Alive = 0;
-        int team2Alive = 0;
+        // Эта проверка защищает от ошибок, если юнит был уничтожен,
+        // но не успел отписаться от всех систем.
+        _team1Fighters.RemoveAll(item => item == null);
+        _team2Fighters.RemoveAll(item => item == null);
 
-        foreach (var character in allCharacters)
-        {
-            if (character.teamID == 1) team1Alive++;
-            else team2Alive++;
-        }
+        bool team1Alive = _team1Fighters.Count > 0;
+        bool team2Alive = _team2Fighters.Count > 0;
 
-        if (team1Alive == 0 && team2Alive > 0)
-        {
-            EndBattle(2);
-        }
-        else if (team2Alive == 0 && team1Alive > 0)
-        {
-            EndBattle(1);
-        }
-        // Если у обеих команд 0 бойцов (например, умерли одновременно), можно считать ничьей.
-        else if (team1Alive == 0 && team2Alive == 0)
-        {
-            EndBattle(0); // 0 - ID для ничьей
-        }
+        if (!team1Alive && team2Alive) EndBattle(2);
+        else if (team1Alive && !team2Alive) EndBattle(1);
+        else if (!team1Alive && !team2Alive) EndBattle(0); // Ничья
     }
 
-    /// <summary>
-    /// Завершает бой и объявляет победителя; сбрасывает пул объектов фидбека до изначального количества
-    /// </summary>
-    /// <param name="winningTeamID">ID победившей команды (или 0 для ничьей).</param>
     private void EndBattle(int winningTeamID)
     {
-        if (battleEnded) return;
-
-        battleEnded = true;
+        _battleEnded = true;
         currentPhase = GamePhase.End;
+        
         if (winningTeamID > 0)
         {
             Debug.Log($"Battle has ended! Team {winningTeamID} is victorious!");
@@ -126,13 +148,6 @@ public class BattleManager : MonoBehaviour
         else
         {
             Debug.Log("Battle has ended in a draw!");
-        }
-        
-        // Сбрасываем пул объектов, чтобы освободить память, занятую
-        // runtime-объектами, созданными во время пиковых нагрузок.
-        if(FeedbackManager.Instance != null)
-        {
-            FeedbackManager.Instance.ResetPool();
         }
     }
 }

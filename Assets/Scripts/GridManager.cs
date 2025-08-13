@@ -2,62 +2,54 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// Отвечает за создание и управление сеткой (полем боя).
-/// Предоставляет доступ к любой клетке (Tile) по ее координатам.
-/// Реализован как синглтон.
+/// Управляет доступом ко всем клеткам (Tile) на игровом поле.
+/// Реализован как синглтон для глобального доступа.
 /// </summary>
 public class GridManager : MonoBehaviour
 {
     public static GridManager Instance;
 
-    [Header("Grid Settings")]
-    [Tooltip("Префаб клетки, из которой будет строиться поле.")]
-    public GameObject tilePrefab;
-    [Tooltip("Ширина поля в клетках.")]
+    // Эти поля устарели и оставлены для временной совместимости
+    // со старыми классами. Будут удалены в будущем.
     public int width = 6;
-    [Tooltip("Высота поля в клетках.")]
     public int height = 6;
-    [Tooltip("Физический размер одной клетки в мировых координатах (метрах).")]
-    public float tileSize = 2.0f;
-
-    // Словарь для быстрого доступа к клеткам по их координатам.
-    private Dictionary<Vector2Int, Tile> tiles;
+    
+    private Dictionary<Vector2Int, Tile> _tiles = new Dictionary<Vector2Int, Tile>();
 
     private void Awake()
     {
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-        }
-
-        GenerateGrid();
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
     }
 
     /// <summary>
-    /// Генерирует поле боя из префабов клеток.
+    /// Регистрирует новый тайл в сетке. Вызывается из BoardGenerator.
     /// </summary>
-    private void GenerateGrid()
+    public void RegisterTile(Vector2Int coords, Tile tile)
     {
-        tiles = new Dictionary<Vector2Int, Tile>();
-        for (int x = 0; x < width; x++)
+        if (!_tiles.ContainsKey(coords))
         {
-            for (int y = 0; y < height; y++)
+            _tiles[coords] = tile;
+        }
+        else
+        {
+            Debug.LogWarning($"Grid coordinate {coords} is already occupied. Ignoring new tile.");
+        }
+    }
+
+    /// <summary>
+    /// Полностью очищает сетку и уничтожает все дочерние объекты тайлов.
+    /// </summary>
+    public void ClearGrid()
+    {
+        foreach (var tile in _tiles.Values)
+        {
+            if (tile != null)
             {
-                Vector3 tilePosition = new Vector3(x * tileSize, 0, y * tileSize);
-                var spawnedTile = Instantiate(tilePrefab, tilePosition, Quaternion.identity, this.transform);
-                spawnedTile.name = $"Tile_{x}_{y}";
-
-                var tileScript = spawnedTile.GetComponent<Tile>();
-                tileScript.x = x;
-                tileScript.y = y;
-
-                tiles[new Vector2Int(x, y)] = tileScript;
+                Destroy(tile.gameObject);
             }
         }
+        _tiles.Clear();
     }
 
     /// <summary>
@@ -66,7 +58,7 @@ public class GridManager : MonoBehaviour
     /// <returns>Объект Tile или null, если клетка с такими координатами не существует.</returns>
     public Tile GetTile(int x, int y)
     {
-        tiles.TryGetValue(new Vector2Int(x, y), out Tile tile);
+        _tiles.TryGetValue(new Vector2Int(x, y), out Tile tile);
         return tile;
     }
 }
